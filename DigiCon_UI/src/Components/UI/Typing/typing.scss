@@ -1,0 +1,61 @@
+.typing-indicator {
+  background-color: #d9f3f7;
+  color: #000;
+  will-change: transform;
+  width: auto;
+  border-radius: 0 19px 19px 19px;
+  padding: 11px 15px;
+  display: table;
+  margin-bottom: 8px;
+  margin-left: 5px;
+  text-align: left;
+  font-family: Roboto, serif;
+  position: relative;
+  animation: 2s bulge infinite ease-out;
+  &::before,
+  &::after {
+    height: 10px;
+    width: 10px;
+    left: -10px;
+    bottom: -10px;
+  }
+  span {
+    height: 7px;
+    width: 7px;
+    float: left;
+    margin: 0 1px;
+    background-color: #000;
+    display: block;
+    border-radius: 50%;
+    opacity: 0.4;
+    @for $i from 1 through 3 {
+      &:nth-of-type(#{$i}) {
+        animation: 1s blink infinite ($i * 0.3333s);
+      }
+    }
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes bulge {
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+/* // vertically center demo  */
+html {
+  display: table;
+  height: 100%;
+  width: 100%;
+}
+
+// body {
+//   display: table-cell;
+//   vertical-align: middle;
+// }

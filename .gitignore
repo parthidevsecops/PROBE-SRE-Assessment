@@ -1,0 +1,43 @@
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+env/
+
+# Node.js
+node_modules/
+dist/
+build/
+.npm/
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+
+# Databases and generated data
+chroma_db/
+neo4j_data/
+data/
+*.db
+
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
