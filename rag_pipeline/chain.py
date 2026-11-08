@@ -259,32 +259,71 @@ def _build_answer_prompt(
     principles: list[str],
     grounded_context: str,
 ) -> str:
+    """Build a user-focused answer prompt using only approved evidence."""
     return f"""You are the PROBE SRE Assessment Assistant.
 
-Answer the user's question using ONLY the GROUNDED ASSESSMENT EVIDENCE below.
+Your task is to answer the user's question clearly and naturally, using ONLY
+the GROUNDED ASSESSMENT EVIDENCE provided below.
 
-The only engineering principles are:
+WRITING STYLE:
+- Use clear, professional, human-friendly English.
+- Answer the user's actual question directly before adding detail.
+- Use short paragraphs and concise bullet points where helpful.
+- Explain technical terms briefly when they are necessary.
+- Avoid repetitive wording and generic consulting language.
+- Do not mention internal retrieval, RAG, vector search, graph databases,
+  grounding checks, evaluator prompts, JSON, model steps, or debugging details.
+
+EVIDENCE AND ACCURACY RULES:
+- Treat the grounded assessment evidence as the only source for assessment-specific facts.
+- Do not invent findings, controls, scores, percentages, dates, metrics,
+  maturity levels, incidents, or assessment dimensions.
+- Do not turn a recommendation or methodology statement into an assessment finding.
+- Do not describe a practice as absent merely because the workbook does not
+  provide evidence about it. Describe this as an evidence gap instead.
+- Distinguish clearly between documented strengths, documented weaknesses,
+  and information that the assessment does not provide.
+- Suggest next steps only when they are directly relevant to a documented
+  weakness or an identified evidence gap. Do not present generic suggestions
+  as if they were assessment findings.
+- If the evidence does not answer part of the question, explain what specific
+  information is not available and answer only the part that is supported.
+
+ANSWER STRUCTURE:
+Use only the sections that genuinely help answer the question. Do not force
+all headings into every response.
+
+1. **Summary** — a short, direct answer to the question.
+2. **Documented strengths** — practices or capabilities explicitly supported
+   by the assessment evidence.
+3. **Improvement opportunities** — weaknesses or improvement areas explicitly
+   supported by the assessment evidence.
+4. **Evidence gaps** — information needed to assess the topic that is not
+   present in the supplied evidence. State what is missing in plain English.
+5. **Suggested next steps** — practical actions tied to the documented
+   improvement opportunities or evidence gaps, where appropriate.
+
+For a simple factual question, give a concise direct answer without unnecessary
+headings. If there are no supported strengths, weaknesses, or recommendations,
+do not invent them or add empty sections.
+
+The only engineering principles in this assessment are:
 {', '.join(PRINCIPLES)}
 
-Do not invent assessment dimensions that are not present in the evidence.
-Do not invent scores, percentages, dates, findings, or maturity levels.
-If the grounded evidence is insufficient, say so.
-Distinguish workbook-derived findings from general recommendations.
+Relevant principles for this question:
+{', '.join(principles) if principles else 'Not specifically identified'}
 
-PROBE METHODOLOGY:
+PROBE METHODOLOGY (terminology and interpretation only):
 {PROBE_METHODOLOGY}
-
-Use the methodology only to interpret terminology and structure the answer.
-Never present methodology text as a finding about this assessment.
-
-Relevant principles:
-{', '.join(principles)}
 
 GROUNDED ASSESSMENT EVIDENCE:
 {grounded_context}
 
 USER QUESTION:
 {user_message}
+
+Return only the answer intended for the user. Do not include internal evaluation
+information or describe the internal processing steps.
 """
 
 
@@ -343,11 +382,24 @@ def run_chain(
             reason,
         )
 
+        # Keep evaluator diagnostics in the returned metadata/logs, but show
+        # the user a plain-English explanation rather than internal details.
+        missing_text = (
+            "The assessment does not provide enough information about: "
+            + "; ".join(map(str, missing))
+            + "."
+            if missing
+            else "The available assessment information does not contain enough "
+                 "relevant detail to answer this question reliably."
+        )
+
         return {
             "text": (
-                "I could not safely answer this question from the retrieved "
-                "PROBE assessment evidence.\n\n"
-                f"Reason: {reason}"
+                "I can’t give a reliable answer from the information documented "
+                "in the PROBE assessment.\n\n"
+                f"{missing_text}\n\n"
+                "This does not necessarily mean the practice is missing; it "
+                "means the assessment evidence provided does not confirm it."
             ),
             "mode": "sre_assessment",
             "principles": principles,
@@ -417,8 +469,8 @@ def run_chain(
     # One bounded correction pass.
     if evaluation.decision == "CORRECT":
         correction_prompt = f"""
-Correct the following PROBE SRE assessment answer using ONLY the
-GROUNDED ASSESSMENT EVIDENCE.
+Revise the answer below so that every assessment-specific statement is
+supported by the GROUNDED ASSESSMENT EVIDENCE.
 
 USER QUESTION:
 {user_message}
@@ -426,19 +478,25 @@ USER QUESTION:
 ORIGINAL ANSWER:
 {answer}
 
-GROUNDING EVALUATION:
+INTERNAL EVALUATION GUIDANCE (use this to correct the answer; never reveal it):
 {evaluation.model_dump_json(indent=2)}
 
 GROUNDED ASSESSMENT EVIDENCE:
 {grounded_context}
 
 Rules:
-- Remove unsupported claims.
-- Correct contradictions.
-- Never invent scores, percentages, questions, findings, dates, or reasoning.
-- If evidence is insufficient, explicitly say so.
-- Separate assessment findings from general recommendations.
-- Return only the corrected answer.
+- Remove unsupported claims and correct any conflict with the evidence.
+- Never invent scores, percentages, questions, findings, dates, metrics,
+  maturity levels, or explanations.
+- Do not treat missing documentation as proof that a practice does not exist.
+- Explain missing information as an evidence gap in plain English.
+- Separate documented strengths, documented improvement opportunities,
+  and evidence gaps.
+- Include practical next steps only when they relate to a documented
+  improvement opportunity or evidence gap.
+- Use clear, professional, concise language and answer the user's question.
+- Do not mention internal evaluation, JSON, retrieval, grounding, or debugging.
+- Return only the final user-facing answer.
 """
 
         answer = chat(
@@ -457,10 +515,19 @@ Rules:
         evaluation = evaluate_grounding(user_message, answer, r)
 
     if evaluation.decision == "ABSTAIN":
+        missing_after_check = getattr(evaluation, "missing_evidence", None) or []
+        missing_text = (
+            "The assessment does not provide enough information about: "
+            + "; ".join(map(str, missing_after_check))
+            + "."
+            if missing_after_check
+            else "The available assessment evidence does not support a reliable answer."
+        )
         answer = (
-            "I could not produce a sufficiently grounded answer from the "
-            "available PROBE assessment evidence.\n\n"
-            f"Reason: {evaluation.explanation}"
+            "I can’t provide a reliable answer based on the information "
+            "documented in the PROBE assessment.\n\n"
+            f"{missing_text}\n\n"
+            "This is an evidence gap, not confirmation that the practice is absent."
         )
 
     logger.info(
