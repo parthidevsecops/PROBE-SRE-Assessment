@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Temperature — keep low for RAG use cases so answers stay grounded in context.
 # Override via LLM_TEMPERATURE in .env (float, 0.0–1.0).
-_TEMPERATURE: float = float(os.environ.get("LLM_TEMPERATURE", "0.1"))
+_TEMPERATURE: float = float(os.environ.get("LLM_TEMPERATURE", "1.0"))
 # Per-request timeout in seconds.  Kept under Cloudflare's 120s proxy limit
 # so Python raises a clean error rather than waiting for Cloudflare's 524.
 _TIMEOUT: float = float(os.environ.get("LLM_TIMEOUT", "90"))
