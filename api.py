@@ -25,7 +25,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name
 logger = logging.getLogger(__name__)
 
 APP_ROOT=Path(__file__).resolve().parent
-UI_BUILD=APP_ROOT/'DigiCon_UI'/'build'
+UI_BUILD=APP_ROOT/'Probe2026UI'/'build'
 INPUT_DIR=Path(os.getenv('INPUT_PATH','/app/input')); CHROMA_PATH=os.getenv('CHROMA_PATH','/app/chroma_db'); GRAPH_PATH=os.getenv('GRAPH_PATH','/app/graph_db/probe_graph.json'); STATUS_FILE=Path(os.getenv('INGEST_STATUS_FILE','/app/data/ingest_status.json'))
 REPORTS_DIR=Path(os.getenv('REPORTS_DIR','/app/data/reports')); REPORTS_DIR.mkdir(parents=True,exist_ok=True)
 app=FastAPI(title='PROBE SRE Assessment API',version='6.0'); lock=Lock(); history=[]
