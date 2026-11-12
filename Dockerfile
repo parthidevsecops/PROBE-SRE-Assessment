@@ -9,7 +9,7 @@
 # OpenSSL 1.1.1 and doesn't hit this, and doesn't understand/need the
 # --openssl-legacy-provider flag that fixes it on 17+ (that flag fails
 # outright on Node 16, so do not add it here while pinned to 16).
-FROM node:16-bullseye AS ui-builder
+FROM node:22-bookworm-slim AS ui-builder
 WORKDIR /ui
 COPY Probe2026UI/package.json Probe2026UI/package-lock.json ./
 RUN npm ci --legacy-peer-deps
@@ -33,7 +33,7 @@ RUN pip install --upgrade pip && \
     pip install torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install -r /app/requirements_rag.txt
 COPY . /app
-COPY --from=ui-builder /ui/build /app/Probe2026UI/build
+COPY --from=ui-builder /ui/dist /app/Probe2026UI/build
 RUN mkdir -p /app/input /app/data /app/chroma_db /app/graph_db && chmod +x /app/docker-entrypoint.sh
 EXPOSE 8501
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

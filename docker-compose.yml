@@ -28,8 +28,8 @@ services:
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: password
       HF_TOKEN: ${HF_TOKEN}
-      HF_BASE_URL: https://router.huggingface.co/v1
-      HF_MODEL: deepseek-ai/DeepSeek-V3.2
+      HF_BASE_URL: https://api.openai.com/v1
+      HF_MODEL: gpt-6-luna
       EMBED_MODEL: BAAI/bge-small-en-v1.5
       INPUT_PATH: /app/input
       CHROMA_PATH: /app/chroma_db
