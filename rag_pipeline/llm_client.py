@@ -17,6 +17,7 @@ Public API (unchanged regardless of backend):
 """
 
 from __future__ import annotations
+from openai import RateLimitError
 
 import logging
 import os
@@ -53,7 +54,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Temperature — keep low for RAG use cases so answers stay grounded in context.
 # Override via LLM_TEMPERATURE in .env (float, 0.0–1.0).
-_TEMPERATURE: float = float(os.environ.get("LLM_TEMPERATURE", "0.1"))
+_TEMPERATURE: float = float(os.environ.get("LLM_TEMPERATURE", "1.0"))
 # Per-request timeout in seconds.  Kept under Cloudflare's 120s proxy limit
 # so Python raises a clean error rather than waiting for Cloudflare's 524.
 _TIMEOUT: float = float(os.environ.get("LLM_TIMEOUT", "90"))
@@ -333,6 +334,14 @@ def _call_with_fallback(messages: list[dict], **api_kwargs):
                     )
                 return response, provider, latency_ms
             except Exception as exc:
+                if isinstance(exc, RateLimitError):
+                    last_exc = exc
+                    logger.error(
+                        "[%s] OpenAI rate limit reached. "
+                        "Stopping retries for this provider.",
+                        provider.name,
+                    )
+                    break                
                 if not _is_retryable(exc):
                     raise
                 last_exc = exc
