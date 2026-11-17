@@ -16,6 +16,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from rag_pipeline.chain import run_chain
 
+####Newly added 2026-11-13: logging configuration to ensure logs are visible in Docker Compose logs 
+import UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from app.config import settings
+import shutil
+
+### close the comment block above and add the following lines to configure logging
+
+
+
 # Configures the root logger so every module's `logging.getLogger(__name__)`
 # call (chain.py, llm_client.py, graph_builder.py, ingest.py, ...) actually
 # reaches stdout and shows up in `docker compose logs -f probe-app`. Without
@@ -30,6 +40,44 @@ INPUT_DIR=Path(os.getenv('INPUT_PATH','/app/input')); CHROMA_PATH=os.getenv('CHR
 REPORTS_DIR=Path(os.getenv('REPORTS_DIR','/app/data/reports')); REPORTS_DIR.mkdir(parents=True,exist_ok=True)
 app=FastAPI(title='PROBE SRE Assessment API',version='6.0'); lock=Lock(); history=[]
 class QueryRequest(BaseModel): question:str
+## Newly added 2026-11-13: CORS configuration to allow requests from the React frontend
+# It's a security feature that browsers enforce.
+origins = [
+    "http://localhost:5173",  # Default Vite React dev server
+    "http://localhost:3000",  # Common Create React App dev server
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.ALLOW_ORIGINS,  # Change this to your exact frontend URL in production
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*'],
+)
+
+# Define the target directory within your Python project 
+UPLOAD_DIR = os.path.join(os.path.dirname(APP_ROOT), "input") 
+
+# Create the directory if it doesn't exist yet 
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+@app.post("/input") 
+async def upload_file(file: UploadFile = File(...)): 
+
+    try:
+        # Sanitize filename
+        safe_filename = os.path.basename(file.filename) 
+        file_path = os.path.join(UPLOAD_DIR, safe_filename) 
+
+        # Save the file stream
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer) 
+        return {"message": "File successfully saved", "filename": safe_filename}
+    
+    except Exception as e: 
+        raise HTTPException(status_code=500, detail=str(e))
+    
+### close the comment block above and add the following lines to configure CORS
 
 def status():
  if not STATUS_FILE.exists(): return {'status':'not_ready','error':'ingestion status file missing'}
