@@ -23,6 +23,7 @@ from .graph_retriever import HybridGraphRetriever
 from .principles_engine import extract_principle_context, PRINCIPLES
 from .llm_client import chat
 from .eval_metrics import evaluate_grounding
+from .deterministic_eval import evaluate_retrieval_deterministic, evaluate_answer_deterministic
 from .probe_methodology import PROBE_METHODOLOGY
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,9 @@ def _ground_retrieved_context(
             "relevant_evidence": [],
             "grounded_context": "",
             "explanation": "RAG did not retrieve assessment evidence.",
+            "semantic_relevance_score": 0,
+            "evidence_coverage_score": 0,
+            "evaluator_confidence": 0,
         }
 
     evaluator_prompt = f"""
@@ -185,6 +189,9 @@ Return ONLY valid JSON:
   "decision": "PASS" or "FAIL",
   "relevance_score": 0,
   "sufficiency_score": 0,
+  "semantic_relevance_score": 0,
+  "evidence_coverage_score": 0,
+  "evaluator_confidence": 0,
   "contradiction_found": false,
   "missing_information": [],
   "relevant_evidence": [],
@@ -195,6 +202,9 @@ Return ONLY valid JSON:
 Decision:
 - PASS = enough relevant evidence exists to answer using only that evidence.
 - FAIL = evidence is irrelevant, insufficient, or materially contradictory.
+- semantic_relevance_score (0-10): meaning-level match to the question.
+- evidence_coverage_score (0-10): how much of the requested topic is supported.
+- evaluator_confidence (0-10): confidence in this evaluation, not answer confidence.
 """
 
     try:
@@ -228,6 +238,15 @@ Decision:
             )
 
         result["decision"] = decision
+        for score_key in ("relevance_score", "sufficiency_score", "semantic_relevance_score", "evidence_coverage_score", "evaluator_confidence"):
+            try:
+                result[score_key] = max(0.0, min(10.0, float(result.get(score_key, 0))))
+            except (TypeError, ValueError):
+                result[score_key] = 0.0
+        result.setdefault("missing_information", [])
+        result.setdefault("relevant_evidence", [])
+        result.setdefault("contradiction_found", False)
+        result.setdefault("explanation", "")
 
         logger.info(
             "retrieval_grounding decision=%s relevance=%s sufficiency=%s "
@@ -250,6 +269,9 @@ Decision:
             "missing_information": ["Unable to validate retrieved evidence"],
             "relevant_evidence": [],
             "grounded_context": "",
+            "semantic_relevance_score": 0,
+            "evidence_coverage_score": 0,
+            "evaluator_confidence": 0,
             "explanation": f"Retrieval grounding failed: {exc}",
         }
 
@@ -365,6 +387,9 @@ def run_chain(
         user_message,
         raw_context,
     )
+    retrieval_deterministic = evaluate_retrieval_deterministic(
+        user_message, raw_context, retrieval_grounding.get("grounded_context", ""), r
+    )
 
     if retrieval_grounding["decision"] != "PASS":
         reason = retrieval_grounding.get(
@@ -416,6 +441,24 @@ def run_chain(
                 "missing_information", []
             ),
             "retrieval_grounding_explanation": reason,
+            "deterministic_evaluation": {"retrieval": retrieval_deterministic, "answer": None},
+            "non_deterministic_evaluation": {
+                "retrieval": {
+                    "evaluation_type": "non_deterministic", "method": "llm_as_judge",
+                    "parameters": {
+                        "decision": retrieval_grounding.get("decision", "FAIL"),
+                        "relevance_score": retrieval_grounding.get("relevance_score", 0),
+                        "sufficiency_score": retrieval_grounding.get("sufficiency_score", 0),
+                        "semantic_relevance_score": retrieval_grounding.get("semantic_relevance_score", 0),
+                        "evidence_coverage_score": retrieval_grounding.get("evidence_coverage_score", 0),
+                        "contradiction_found": retrieval_grounding.get("contradiction_found", False),
+                        "evaluator_confidence": retrieval_grounding.get("evaluator_confidence", 0),
+                        "missing_information": retrieval_grounding.get("missing_information", []),
+                        "explanation": retrieval_grounding.get("explanation", ""),
+                    },
+                },
+                "answer": None,
+            },
             "evidence_sufficient": False,
             "answer_relevant": False,
             "contradiction_found": False,
@@ -530,6 +573,41 @@ Rules:
             "This is an evidence gap, not confirmation that the practice is absent."
         )
 
+    answer_deterministic = evaluate_answer_deterministic(user_message, answer, grounded_context)
+    non_deterministic_evaluation = {
+        "retrieval": {
+            "evaluation_type": "non_deterministic", "method": "llm_as_judge",
+            "parameters": {
+                "decision": retrieval_grounding.get("decision", "PASS"),
+                "relevance_score": retrieval_grounding.get("relevance_score", 0),
+                "sufficiency_score": retrieval_grounding.get("sufficiency_score", 0),
+                "semantic_relevance_score": retrieval_grounding.get("semantic_relevance_score", 0),
+                "evidence_coverage_score": retrieval_grounding.get("evidence_coverage_score", 0),
+                "contradiction_found": retrieval_grounding.get("contradiction_found", False),
+                "evaluator_confidence": retrieval_grounding.get("evaluator_confidence", 0),
+                "missing_information": retrieval_grounding.get("missing_information", []),
+                "explanation": retrieval_grounding.get("explanation", ""),
+            },
+        },
+        "answer": {
+            "evaluation_type": "non_deterministic", "method": "llm_as_judge",
+            "parameters": {
+                "decision": evaluation.decision, "grounded": evaluation.grounded,
+                "evidence_sufficient": evaluation.evidence_sufficient,
+                "answer_relevant": evaluation.answer_relevant,
+                "contradiction_found": evaluation.contradiction_found,
+                "grounding_score": evaluation.grounding_score,
+                "semantic_faithfulness_score": evaluation.semantic_faithfulness_score,
+                "completeness_score": evaluation.completeness_score,
+                "answer_clarity_score": evaluation.answer_clarity_score,
+                "evaluator_confidence": evaluation.evaluator_confidence,
+                "unsupported_claims": evaluation.unsupported_claims,
+                "missing_evidence": evaluation.missing_evidence,
+                "explanation": evaluation.explanation,
+            },
+        },
+    }
+
     logger.info(
         "final evaluation: decision=%s score=%.1f grounded=%s",
         evaluation.decision,
@@ -556,6 +634,11 @@ Rules:
         "retrieval_grounding_explanation": retrieval_grounding.get(
             "explanation", ""
         ),
+        "deterministic_evaluation": {
+            "retrieval": retrieval_deterministic,
+            "answer": answer_deterministic,
+        },
+        "non_deterministic_evaluation": non_deterministic_evaluation,
         "evidence_sufficient": evaluation.evidence_sufficient,
         "answer_relevant": evaluation.answer_relevant,
         "contradiction_found": evaluation.contradiction_found,

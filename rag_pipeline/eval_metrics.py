@@ -26,6 +26,10 @@ class GroundingEvaluation(BaseModel):
     answer_relevant: bool = Field(description="Whether the answer addresses the question.")
     contradiction_found: bool = Field(description="Whether the answer contradicts evidence.")
     grounding_score: float = Field(ge=0, le=10, description="Grounding score from 0 to 10.")
+    semantic_faithfulness_score: float = Field(default=0, ge=0, le=10)
+    completeness_score: float = Field(default=0, ge=0, le=10)
+    answer_clarity_score: float = Field(default=0, ge=0, le=10)
+    evaluator_confidence: float = Field(default=0, ge=0, le=10)
     unsupported_claims: list[str] = Field(default_factory=list)
     missing_evidence: list[str] = Field(default_factory=list)
     explanation: str = ""
@@ -110,7 +114,11 @@ Rules:
 5. If the question needs information that is absent, set evidence_sufficient=false.
 6. General SRE recommendations may be acceptable only if clearly presented as
    recommendations and not as findings from this assessment.
-7. Do not reward professional wording or answer length.
+7. Do not reward professional wording or answer length when judging factual grounding.
+8. Score semantic_faithfulness_score (0-10): how accurately each claim follows from evidence.
+9. Score completeness_score (0-10): whether the answer covers the supported parts of the question.
+10. Score answer_clarity_score (0-10): whether the answer is understandable and well organised.
+11. Score evaluator_confidence (0-10): your confidence in this evaluation, not confidence in the answer.
 
 USER QUESTION:
 {question}
@@ -128,6 +136,10 @@ Return ONLY valid JSON:
   "answer_relevant": true,
   "contradiction_found": false,
   "grounding_score": 9.0,
+  "semantic_faithfulness_score": 9.0,
+  "completeness_score": 8.0,
+  "answer_clarity_score": 9.0,
+  "evaluator_confidence": 8.0,
   "unsupported_claims": [],
   "missing_evidence": [],
   "explanation": "Short explanation",
@@ -151,9 +163,14 @@ Decision rules:
         ])
         result = GroundingEvaluation.model_validate(_parse_json(raw))
         logger.info(
-            "grounding_eval decision=%s score=%.1f grounded=%s sufficient=%s contradiction=%s",
+            "grounding_eval decision=%s score=%.1f faithfulness=%.1f completeness=%.1f "
+            "clarity=%.1f confidence=%.1f grounded=%s sufficient=%s contradiction=%s",
             result.decision,
             result.grounding_score,
+            result.semantic_faithfulness_score,
+            result.completeness_score,
+            result.answer_clarity_score,
+            result.evaluator_confidence,
             result.grounded,
             result.evidence_sufficient,
             result.contradiction_found,
